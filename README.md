@@ -14,48 +14,40 @@ Student drill app + teacher dashboard, built on Next.js (Vercel) + Supabase
 5. Authentication → URL Configuration → add your eventual Vercel URL
    (e.g. `https://your-app.vercel.app/**`) to Redirect URLs once you have it
 
-## 1b. Set up custom SMTP with Resend (do this before provisioning 30 students)
+## 1b. Set up custom SMTP with Gmail (do this before provisioning 30 students)
 
 Supabase's built-in email sender is fine for a quick test, but its free-tier
 quota is very low (a handful of emails per hour) — provisioning a class of
 30 and having everyone request a magic link will trip a
 **"email rate limit exceeded"** error. Fixing this means telling Supabase to
 send auth emails through your own SMTP provider instead of its shared one.
-[Resend](https://resend.com) has a free tier (3,000 emails/month, 100/day)
-that's more than enough for this use case.
+Gmail works well here and needs no domain of your own — just an existing
+Gmail account. Its sending limit is ~500 emails per rolling 24 hours, far
+more than 30 students will ever need in a day.
 
-1. **Create a Resend account** at resend.com (free tier is fine).
-2. **Verify a sending domain**: Resend dashboard → **Domains** → **Add Domain**
-   → enter a domain you control → add the shown DNS records (SPF/DKIM, usually
-   a couple of `TXT`/`CNAME` records) at your domain registrar → wait for
-   Resend to show the domain as **Verified** (usually minutes, can take longer
-   depending on DNS propagation).
-   - Don't have a spare domain? Resend also has a one-click **Supabase
-     integration** (Resend dashboard → **Integrations** → **Supabase**) that
-     can skip some of this manual setup — check there first if you want the
-     fastest path.
-3. **Get SMTP credentials**: Resend dashboard → **SMTP** (or **Settings →
-   SMTP**) → it shows:
-   - Host: `smtp.resend.com`
-   - Port: `465` (SSL) or `587` (TLS)
-   - Username: `resend`
-   - Password: an API key — click **Create API Key** if you don't have one
-     yet, and copy it immediately (shown once)
-4. **Plug it into Supabase**: Supabase dashboard → your project →
+1. **Turn on 2-Step Verification** on the Gmail account you want to send
+   from (Google Account → **Security** → **2-Step Verification**) — this is
+   required before Google will let you create an App Password.
+2. **Create an App Password**: Google Account → **Security** →
+   **2-Step Verification** → scroll down to **App passwords** → create one
+   (name it something like "Supabase SMTP") → copy the 16-character password
+   it shows you (shown once, no spaces needed when you paste it).
+3. **Plug it into Supabase**: Supabase dashboard → your project →
    **Project Settings → Authentication** (older dashboards: **Authentication
    → Settings**) → scroll to **SMTP Settings** → toggle **Enable Custom SMTP**
    → fill in:
-   - **Sender email**: an address `@` the domain you verified (e.g.
-     `noreply@yourdomain.com`)
+   - **Sender email**: your Gmail address (e.g. `yourname@gmail.com`)
    - **Sender name**: e.g. `Vocab Drill`
-   - **Host**: `smtp.resend.com`
-   - **Port**: `465`
-   - **Username**: `resend`
-   - **Password**: the Resend API key from step 3
+   - **Host**: `smtp.gmail.com`
+   - **Port**: `587`
+   - **Username**: your full Gmail address
+   - **Password**: the 16-character App Password from step 2 (not your
+     regular Gmail password)
    → **Save**.
-5. **Test it**: trigger a magic-link sign-in from `/login` with a real email
-   — it should arrive from your own domain, and the rate-limit error should
-   be gone (custom SMTP uses Resend's much higher limits, not Supabase's).
+4. **Test it**: trigger a magic-link sign-in from `/login` with a real email
+   — it should arrive from your Gmail address, and the rate-limit error
+   should be gone (custom SMTP uses Gmail's much higher limits, not
+   Supabase's).
 
 Once this is set up, re-running `scripts/provision.js` for the full roster
 and everyone signing in for the first time won't hit the shared rate limit.
@@ -77,7 +69,7 @@ Edit `scripts/roster.example.csv` (or make your own) with real names/emails,
 then:
 
 ```bash
-export SUPABASE_URL=https://xtoqfkgooulkpesqbjbm.supabase.co \
+export SUPABASE_URL=https://xxxxxx.supabase.co \
 export SUPABASE_SERVICE_ROLE_KEY=eyJh......... \
 node scripts/provision.js scripts/roster.example.csv
 ```

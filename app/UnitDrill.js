@@ -77,12 +77,17 @@ export function UnitDrill({ unit, onBack, histFor, recordAttempt, readOnlyBanner
   );
 }
 
-function Section({ title, right, children }) {
+function Section({ title, subtitle, right, children }) {
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <h2 style={{ fontSize: 19, margin: 0 }}>{title}</h2>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--muted)' }}>{right}</span>
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <h2 style={{ fontSize: 19, margin: 0 }}>{title}</h2>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--muted)' }}>{right}</span>
+        </div>
+        {subtitle && (
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{subtitle}</div>
+        )}
       </div>
       {children}
     </section>
@@ -172,9 +177,20 @@ function RecallDeck({ words, histFor, recordAttempt }) {
     setFeedback({ text: '', ok: null });
   }, [idx, order, activeWords]);
 
+  const masteredWordList = words.filter((w) => isMastered(histFor('recall', w.word)));
+  const masteredCount = masteredWordList.length;
+  const recallSubtitle = (
+    <>
+      {words.length} words ({masteredCount} mastered)
+      {masteredCount > 0 && (
+        <div style={{ marginTop: 2 }}>Mastered: {masteredWordList.map((w) => w.word).join(', ')}</div>
+      )}
+    </>
+  );
+
   if (words.length > 0 && activeWords.length === 0) {
     return (
-      <Section title="Chinese → English" right="">
+      <Section title="Chinese → English" subtitle={recallSubtitle} right="">
         <div style={{ ...cardStyle, background: 'var(--good-soft)', border: '1px solid var(--good)', textAlign: 'center', color: 'var(--good)', fontWeight: 600 }}>
           🎉 All words mastered — 5 correct in a row, every time.
         </div>
@@ -204,7 +220,7 @@ function RecallDeck({ words, histFor, recordAttempt }) {
   }
 
   return (
-    <Section title="Chinese → English" right={`${idx + 1} / ${activeWords.length}`}>
+    <Section title="Chinese → English" subtitle={recallSubtitle} right={`${idx + 1} / ${activeWords.length}`}>
       <div style={cardStyle}>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600 }}>{w.zh}</div>
         <Dots hist={hist} />
@@ -230,53 +246,102 @@ function RecallDeck({ words, histFor, recordAttempt }) {
   );
 }
 
+const BLANK_BATCH_SIZE = 10;
+
 function BlankDrill({ blanks, histFor, recordAttempt }) {
-  const [activeIdx, setActiveIdx] = useState([]);
+  // `queue` holds the still-to-come items for this round (shuffled once,
+  // drawn without replacement); `batch` is the up-to-10 currently on
+  // screen. Clicking "Check all" scores the batch, then pulls the next
+  // batch straight off the queue until it's empty.
+  const [queue, setQueue] = useState([]);
+  const [batch, setBatch] = useState([]);
   const [values, setValues] = useState({});
   const [results, setResults] = useState({});
+  const [roundDone, setRoundDone] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
-  useEffect(() => {
+  function startRound() {
     const active = blanks
       .map((_, i) => i)
       .filter((i) => !isMastered(histFor('blank', blanks[i].sentence)));
-    setActiveIdx(shuffle(active));
+    const shuffled = shuffle(active);
+    setBatch(shuffled.slice(0, BLANK_BATCH_SIZE));
+    setQueue(shuffled.slice(BLANK_BATCH_SIZE));
     setValues({});
     setResults({});
+    setRoundDone(false);
+  }
+
+  useEffect(() => {
+    startRound();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blanks]);
 
-  if (blanks.length > 0 && activeIdx.length === 0) {
+  const masteredBlankList = blanks.filter((b) => isMastered(histFor('blank', b.sentence)));
+  const masteredCount = masteredBlankList.length;
+  const blankSubtitle = (
+    <>
+      {blanks.length} blanks ({masteredCount} mastered)
+      {masteredCount > 0 && (
+        <div style={{ marginTop: 2 }}>Mastered: {masteredBlankList.map((b) => b.answer).join(', ')}</div>
+      )}
+    </>
+  );
+
+  const allMastered = blanks.length > 0 && masteredCount === blanks.length;
+
+  if (allMastered) {
     return (
-      <Section title="Fill in the blank" right="">
+      <Section title="Fill in the blank" subtitle={blankSubtitle} right="">
         <div style={{ background: 'var(--good-soft)', border: '1px solid var(--good)', borderRadius: 12, padding: 20, textAlign: 'center', color: 'var(--good)', fontWeight: 600 }}>
           🎉 All sentences mastered.
         </div>
+        {!reviewOpen ? (
+          <button style={primaryBtn} onClick={() => setReviewOpen(true)}>Review</button>
+        ) : (
+          <ReviewBlanks blanks={blanks} onClose={() => setReviewOpen(false)} />
+        )}
       </Section>
     );
   }
-  if (activeIdx.length === 0) return null;
+  if (blanks.length === 0) return null;
+
+  if (roundDone) {
+    return (
+      <Section title="Fill in the blank" subtitle={blankSubtitle} right="">
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: 20, textAlign: 'center', color: 'var(--muted)' }}>
+          You've gone through all the remaining sentences for this round.
+        </div>
+        <button style={primaryBtn} onClick={startRound}>Start another round</button>
+      </Section>
+    );
+  }
 
   async function checkAll() {
-    const masteredNow = [];
-    for (const i of activeIdx) {
+    for (const i of batch) {
       const b = blanks[i];
       const val = (values[i] || '').trim().toLowerCase();
       if (val.length === 0) continue;
       const ok = val === b.answer.toLowerCase();
       const hist = await recordAttempt('blank', b.sentence, ok);
       setResults((r) => ({ ...r, [i]: { ok, hist } }));
-      if (isMastered(hist)) masteredNow.push(i);
     }
-    if (masteredNow.length) {
-      setTimeout(() => {
-        setActiveIdx((cur) => cur.filter((i) => !masteredNow.includes(i)));
-      }, 800);
-    }
+    const nextBatch = queue.slice(0, BLANK_BATCH_SIZE);
+    const rest = queue.slice(BLANK_BATCH_SIZE);
+    const queueWasEmpty = queue.length === 0;
+    setTimeout(() => {
+      setBatch(nextBatch);
+      setQueue(rest);
+      setValues({});
+      setResults({});
+      if (queueWasEmpty) setRoundDone(true);
+    }, 800);
   }
 
   return (
-    <Section title="Fill in the blank" right="type the word, then check">
+    <Section title="Fill in the blank" subtitle={blankSubtitle} right={`${queue.length} left this round`}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {activeIdx.map((i) => {
+        {batch.map((i) => {
           const b = blanks[i];
           const r = results[i];
           return (
@@ -309,6 +374,59 @@ function BlankDrill({ blanks, histFor, recordAttempt }) {
         <button style={btnStyle} onClick={() => { setValues({}); setResults({}); }}>Reset</button>
       </div>
     </Section>
+  );
+}
+
+function ReviewBlanks({ blanks, onClose }) {
+  const [values, setValues] = useState({});
+  const [results, setResults] = useState({});
+
+  function checkAll() {
+    const next = {};
+    blanks.forEach((b, i) => {
+      const val = (values[i] || '').trim().toLowerCase();
+      if (val.length === 0) return;
+      next[i] = { ok: val === b.answer.toLowerCase() };
+    });
+    setResults(next);
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+        Just for practice — these answers aren't tracked.
+      </div>
+      {blanks.map((b, i) => {
+        const r = results[i];
+        return (
+          <div
+            key={i}
+            style={{
+              background: 'var(--surface)', border: '1px solid ' + (r ? (r.ok ? 'var(--good)' : 'var(--bad)') : 'var(--line)'),
+              borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10,
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6 }}>{b.sentence.replace('______', '＿＿＿＿＿＿')}</p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={values[i] || ''}
+                onChange={(e) => setValues((v) => ({ ...v, [i]: e.target.value }))}
+                placeholder={b.answer.slice(0, 3) + '…'}
+                style={{ flex: 1, minWidth: 0, fontSize: 15, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--line)', background: 'var(--bg)', color: 'var(--ink)' }}
+              />
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, color: r ? (r.ok ? 'var(--good)' : 'var(--bad)') : 'transparent' }}>
+              {r ? (r.ok ? '✓ correct' : '✗ answer: ' + b.answer) : ' '}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button style={primaryBtn} onClick={checkAll}>Check all</button>
+        <button style={btnStyle} onClick={() => { setValues({}); setResults({}); }}>Reset</button>
+        <button style={btnStyle} onClick={onClose}>Close review</button>
+      </div>
+    </div>
   );
 }
 
