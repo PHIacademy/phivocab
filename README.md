@@ -77,7 +77,7 @@ Edit `scripts/roster.example.csv` (or make your own) with real names/emails,
 then:
 
 ```bash
-export SUPABASE_URL=https://xtoqfkgooulkpesqbjbm.supabase.co \
+export SUPABASE_URL=https://xxxxx.supabase.co \
 export SUPABASE_SERVICE_ROLE_KEY=eyJh......... \
 node scripts/provision.js scripts/roster.example.csv
 ```
